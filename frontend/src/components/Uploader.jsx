@@ -34,7 +34,8 @@ export default function Uploader({ onUploadSuccess, onBack, classId }) {
       onUploadSuccess(response.data.deck_id)
     } catch (err) {
       console.error(err)
-      setError("AI Engine encountered an error. Please try a smaller PDF.")
+      const message = err.response?.data?.detail || "AI Engine encountered an error. Please try a smaller PDF."
+      setError(message)
     } finally {
       setIsProcessing(false)
     }

@@ -10,7 +10,7 @@ load_dotenv(dotenv_path=env_path)
 API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=API_KEY)
 
-print("Available models:")
+print("--- START OF MODELS ---")
 for m in genai.list_models():
-    if 'generateContent' in m.supported_generation_methods:
-        print(m.name)
+    print(f"Model: {m.name}")
+print("--- END OF MODELS ---")

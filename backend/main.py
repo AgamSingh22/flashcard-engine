@@ -120,17 +120,21 @@ async def generate_flashcards_from_chunk(text_chunk: str, chunk_index: int, tota
 
     try:
         # Respect Rate Limits: Stagger sequential calls
+        # We increase this slightly to 2.0s for the 2.5-flash model stability
         if chunk_index > 0:
-            await asyncio.sleep(1.5) 
+            await asyncio.sleep(2.0) 
 
         response = await model.generate_content_async(
             system_prompt + "\n" + user_prompt,
             generation_config={"response_mime_type": "application/json"}
         )
-        return json.loads(response.text)
+        data = json.loads(response.text)
+        print(f"DEBUG: Chunk {chunk_index} generated {len(data)} cards.")
+        return data
     except Exception as e:
-        print(f"AI Generation Error (Chunk {chunk_index}): {e}")
-        return []
+        print(f"CRITICAL: AI Generation Error (Chunk {chunk_index}): {str(e)}")
+        # Raise the error up so it can be handled by the main endpoint
+        raise e
 
 
 # ==========================================
@@ -209,32 +213,45 @@ async def upload_pdf(file: UploadFile = File(...), class_id: str = Form(None)):
         
         for i in range(process_limit):
             print(f"Processing chunk {i+1}/{process_limit}...")
-            chunk_cards = await generate_flashcards_from_chunk(text_chunks[i], i, process_limit)
-            if chunk_cards:
-                all_generated_cards.extend(chunk_cards)
+            try:
+                chunk_cards = await generate_flashcards_from_chunk(text_chunks[i], i, process_limit)
+                if chunk_cards:
+                    all_generated_cards.extend(chunk_cards)
+            except Exception as chunk_err:
+                # If a chunk fails, we log it but continue unless we have 0 cards at the end
+                print(f"Warning: Chunk {i+1} failed but continuing: {chunk_err}")
+                continue
         
         # 3. Save to Database
         if all_generated_cards:
+            print(f"Saving {len(all_generated_cards)} cards to database...")
             deck_response = supabase.table("decks").insert({
                 "title": file.filename,
                 "class_id": class_id
             }).execute()
+            
+            if not deck_response.data:
+                raise Exception("Failed to create deck in Supabase.")
+                
             new_deck_id = deck_response.data[0]['id']
             
             final_cards = []
             for card in all_generated_cards:
-                card['deck_id'] = new_deck_id
-                if 'type' in card:
-                    card['card_type'] = card.pop('type')
+                # Map 'type' to 'card_type' if needed
+                card_type = card.get('card_type') or card.get('type') or 'CONCEPT'
                 
-                # SR Defaults
-                card['repetition'] = 0
-                card['interval'] = 0
-                card['easiness_factor'] = 2.5
-                card['next_review'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-                
-                final_cards.append(card)
-                
+                final_cards.append({
+                    "deck_id": new_deck_id,
+                    "card_type": card_type,
+                    "front": card.get('front', 'No question'),
+                    "back": card.get('back', 'No answer'),
+                    "tags": card.get('tags', []),
+                    "repetition": 0,
+                    "interval": 0,
+                    "easiness_factor": 2.5,
+                    "next_review": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                })
+            
             supabase.table("cards").insert(final_cards).execute()
             
             return {
@@ -243,12 +260,15 @@ async def upload_pdf(file: UploadFile = File(...), class_id: str = Form(None)):
                 "cards_saved": len(final_cards)
             }
         else:
-            raise HTTPException(status_code=500, detail="AI failed to generate flashcards.")
+            raise HTTPException(status_code=500, detail="AI failed to generate any cards from this PDF. This is often due to API rate limits (Free Tier).")
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return the actual error message to the frontend for debugging
+        raise HTTPException(status_code=500, detail=f"Backend Error: {str(e)}")
 
 
 @app.get("/api/decks/{deck_id}/stats")
