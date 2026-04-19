@@ -138,29 +138,22 @@ async def generate_flashcards_from_chunk(text_chunk: str, chunk_index: int, tota
 # ==========================================
 
 @app.get("/api/classes")
-async def get_classes(user_id: Optional[str] = None):
+async def get_classes():
     """Retrieve all classes for the user."""
     try:
-        query = supabase.table("classes").select("*").order("name")
-        if user_id:
-            query = query.eq("user_id", user_id)
-        response = query.execute()
+        response = supabase.table("classes").select("*").order("name").execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 class ClassCreate(BaseModel):
     name: str
-    user_id: str
 
 @app.post("/api/classes")
 async def create_class(data: ClassCreate):
     """Create a new class/chapter folder."""
     try:
-        response = supabase.table("classes").insert({
-            "name": data.name,
-            "user_id": data.user_id
-        }).execute()
+        response = supabase.table("classes").insert({"name": data.name}).execute()
         return response.data[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -181,23 +174,16 @@ async def delete_class(class_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/upload-pdf/")
-async def upload_pdf(
-    file: UploadFile = File(...), 
-    class_id: str = Form(None),
-    user_id: str = Form(None)
-):
+async def upload_pdf(file: UploadFile = File(...), class_id: str = Form(None)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
     
     try:
-        # If no class_id, ensure a "General" class exists for this user
+        # If no class_id, ensure a "General" class exists
         if not class_id:
-            gen_res = supabase.table("classes").select("id").eq("name", "General").eq("user_id", user_id).execute()
+            gen_res = supabase.table("classes").select("id").eq("name", "General").execute()
             if not gen_res.data:
-                gen_new = supabase.table("classes").insert({
-                    "name": "General",
-                    "user_id": user_id
-                }).execute()
+                gen_new = supabase.table("classes").insert({"name": "General"}).execute()
                 class_id = gen_new.data[0]['id']
             else:
                 class_id = gen_res.data[0]['id']
@@ -231,8 +217,7 @@ async def upload_pdf(
         if all_generated_cards:
             deck_response = supabase.table("decks").insert({
                 "title": file.filename,
-                "class_id": class_id,
-                "user_id": user_id
+                "class_id": class_id
             }).execute()
             new_deck_id = deck_response.data[0]['id']
             
