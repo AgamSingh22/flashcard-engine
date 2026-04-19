@@ -38,8 +38,11 @@ function App() {
 
   // 2. Data Fetching
   const fetchClasses = async () => {
+    if (!session?.user) return
     try {
-      const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/classes`)
+      const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/classes`, {
+        params: { user_id: session.user.id }
+      })
       setClasses(res.data)
     } catch (err) {
       console.error("Classes fetch error", err)
@@ -47,10 +50,12 @@ function App() {
   }
 
   const fetchDecks = async (classId) => {
+    if (!session?.user) return
     const { data, error } = await supabase
       .from('decks')
       .select('*')
       .eq('class_id', classId)
+      .eq('user_id', session.user.id)
       .order('id', { ascending: false })
 
     if (error) console.error("Error fetching decks:", error)
@@ -60,21 +65,28 @@ function App() {
   useEffect(() => {
     if (session?.user) {
       fetchClasses()
+    } else {
+      setClasses([])
     }
   }, [session])
 
-  useEffect(() => {
-    if (selectedClassId) {
-      fetchDecks(selectedClassId)
-    }
-  }, [selectedClassId])
+  const selectedClass = classes.find(c => c.id === selectedClassId)
 
-  // 3. Handlers
+  useEffect(() => {
+    if (selectedClass) {
+      fetchDecks(selectedClass.id)
+    }
+  }, [selectedClass])
+
+  // 3. Actions
   const handleCreateClass = async (e) => {
     e.preventDefault()
-    if (!newClassName) return
+    if (!newClassName || !session?.user) return
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/classes`, { name: newClassName })
+      const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/classes`, { 
+        name: newClassName,
+        user_id: session.user.id
+      })
       setClasses([...classes, res.data])
       setIsCreateClassOpen(false)
       setNewClassName('')
@@ -216,6 +228,7 @@ function App() {
                   setView('study')
                 }}
                 classId={selectedClassId}
+                userId={session?.user?.id}
                 onBack={() => setView('dashboard')}
               />
             )}

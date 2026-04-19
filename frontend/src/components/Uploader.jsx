@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { UploadCloud, FileText, X, Loader2, Sparkles } from 'lucide-react'
 import axios from 'axios'
 
-export default function Uploader({ onUploadSuccess, onBack, classId }) {
+export default function Uploader({ onUploadSuccess, onBack, classId, userId }) {
   const [file, setFile] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -26,6 +26,7 @@ export default function Uploader({ onUploadSuccess, onBack, classId }) {
     const formData = new FormData()
     formData.append('file', file)
     if (classId) formData.append('class_id', classId)
+    if (userId) formData.append('user_id', userId)
 
     try {
       const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/upload-pdf/`, formData, {
